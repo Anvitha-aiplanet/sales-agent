@@ -34,8 +34,6 @@ Jinja2
 jiter
 jsonpatch
 jsonpointer
-jsonschema
-jsonschema-specifications
 kiwisolver
 langchain
 langchain-community
