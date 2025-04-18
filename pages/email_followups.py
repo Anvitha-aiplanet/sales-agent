@@ -18,12 +18,13 @@ st.set_page_config(
 
 # Store the deployment name in session state
 if 'deployment_name' not in st.session_state:
-    st.session_state.deployment_name = st.secrets.get("AZURE_OPENAI_DEPLOYMENT_NAME")
+    st.session_state.deployment_name = "intern-gpt4"
 
 
 # Email configuration (hidden from user)
 EMAIL_ADDRESS = st.secrets.get("EMAIL_ADDRESS")
 EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD")
+
 DEFAULT_RECIPIENT = os.environ.get("DEFAULT_RECIPIENT", "anvithareddy1308@gmail.com")
 
 email_configured = all([
