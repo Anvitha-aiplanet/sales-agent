@@ -6,6 +6,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
 import streamlit as st
+import uuid
+import google.generativeai as genai
 
 class TranscriptAnalyzer:
     def __init__(self, deployment_name):
@@ -16,18 +18,24 @@ class TranscriptAnalyzer:
             api_version=st.secrets.get("AZURE_OPENAI_API_VERSION")
         )
         self.deployment_name = deployment_name
+        
+        # Initialize Gemini if API key is available
+        gemini_api_key = st.secrets.get("GOOGLE_API_KEY")
+        self.gemini_available = False
+        
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                self.gemini_available = True
+                # Default model - can be 'gemini-pro' or other versions
+                self.gemini_model_name = "gemini-2.0-flash"
+                self.gemini_model = genai.GenerativeModel(self.gemini_model_name)
+            except Exception as e:
+                print(f"Error configuring Gemini: {str(e)}")
     
     def analyze_transcript(self, transcript, temperature=0.3):
-        """
-        Analyze a transcript to identify potential follow-up actions.
-        
-        Args:
-            transcript (str): The client conversation transcript
-            temperature (float): Controls randomness in the model's output
-            
-        Returns:
-            dict: Analysis results containing follow-up actions
-        """
+        """Analyze a transcript to identify potential follow-up actions."""
+
         system_prompt = """
         You are an expert assistant that analyzes client conversation transcripts.
         Identify specific follow-up actions needed based on the transcript.
@@ -73,15 +81,8 @@ class TranscriptAnalyzer:
             return {"error": str(e)}
     
     def get_structured_follow_ups(self, transcript):
-        """
-        Get a structured list of follow-ups from a transcript.
-        
-        Args:
-            transcript (str): The client conversation transcript
-            
-        Returns:
-            dict: Structured follow-up information
-        """
+        """Get a structured list of follow-ups from a transcript."""
+
         analysis = self.analyze_transcript(transcript)
         
         if "error" in analysis:
@@ -101,22 +102,225 @@ class TranscriptAnalyzer:
             "priority_counts": priority_counts,
             "total_follow_ups": len(analysis.get("follow_ups", []))
         }
-        
+        print("RESULTS", result)
         return result
-        
-    def send_email_alert(self, transcript_id, recipient_email, follow_up_info, email_config=None):
-        """
-        Send email alert for follow-up actions based on transcript analysis.
-        
-        Args:
-            transcript_id (str): Unique identifier for the transcript
-            recipient_email (str): Email address to send the alert to
-            follow_up_info (dict): Follow-up information from get_structured_follow_ups
-            email_config (dict, optional): Email configuration parameters
+    
+    def generate_email_draft_with_gemini(self, follow_up_info, transcript_id=None, feedback=None):
+        """Generate an email draft using Google's Gemini model"""
+        if not self.gemini_available:
+            st.warning("Gemini not configured. Falling back to Azure OpenAI.")
+            return self.generate_email_draft(follow_up_info, transcript_id, feedback)
             
-        Returns:
-            bool: True if email sent successfully, False otherwise
-        """
+        try:
+            # If no transcript ID, generate one
+            if not transcript_id:
+                transcript_id = f"TRANSCRIPT-{uuid.uuid4().hex[:8]}"
+            
+            # Generate ticket ID
+            ticket_id = f"{transcript_id}-{datetime.now().strftime('%Y%m%d%H%M')}"
+            
+            # Determine overall priority based on highest priority follow-up
+            priority = "normal"
+            if follow_up_info["priority_counts"]["High"] > 0:
+                priority = "urgent"
+            elif follow_up_info["priority_counts"]["Medium"] > 0:
+                priority = "high"
+            
+            # Create the prompt for Gemini
+            prompt = f"""You are an expert assistant that drafts professional follow-up emails to be sent to clients.
+            Create a well-structured, professional client-facing email that addresses the follow-up actions needed.
+            
+            The email should:
+            1. Have an appropriate subject line
+            2. Include a professional greeting
+            3. Have a brief introduction recapping the conversation
+            4. Clearly outline next steps and any information needed from the client
+            5. Include clear action items and deadlines without mentioning "priority levels"
+            6. End with a professional closing
+            
+            The tone should be professional, helpful, and client-oriented. Do not mention internal tracking details like ticket IDs or priority ratings.
+            
+            Format your response with:
+            Subject: [Your subject line here]
+            
+            [Body of the email]
+            
+            Here's the information about the conversation:
+            
+            Summary of conversation:
+            {follow_up_info["summary"]}
+            
+            Follow-up actions required ({follow_up_info["total_follow_ups"]} total):
+            """
+            
+            # Add each follow-up item to the prompt, but format for client-facing email
+            for idx, item in enumerate(follow_up_info["follow_ups"], 1):
+                # Remove internal priority markers and justifications for client email
+                prompt += f"""
+                {idx}. Action needed: {item["action"]}
+                   Details: {item["details"]}
+                """
+            
+            # If user provided feedback, add it to the prompt
+            if feedback:
+                prompt += f"\n\nIncorporate this feedback in your draft: {feedback}"
+            
+            # Generate response with Gemini
+            response = self.gemini_model.generate_content(prompt)
+            email_content = response.text
+            
+            # Extract subject line and body
+            email_parts = email_content.split("Subject:", 1)
+            
+            if len(email_parts) > 1:
+                # There is a subject line in the generated email
+                subject_and_body = email_parts[1].strip()
+                subject_body_split = subject_and_body.split("\n", 1)
+                
+                subject = subject_body_split[0].strip()
+                body = subject_body_split[1].strip() if len(subject_body_split) > 1 else ""
+            else:
+                # No subject found, generate a default one
+                subject = f"Follow-up from our recent conversation"
+                body = email_content.strip()
+            
+            return {
+                "subject": subject,
+                "body": body,
+                "ticket_id": ticket_id,
+                "priority": priority,
+                "model_used": "gemini"
+            }
+                
+        except Exception as e:
+            st.error(f"Error generating email draft with Gemini: {str(e)}")
+            # Fall back to OpenAI
+            return self.generate_email_draft(follow_up_info, transcript_id, feedback)
+    
+    def generate_email_draft(self, follow_up_info, transcript_id=None, feedback=None):
+        """Generate an email draft based on follow-up information and optional feedback"""
+        
+        # Always try to use Gemini first if available
+        if self.gemini_available:
+            return self.generate_email_draft_with_gemini(follow_up_info, transcript_id, feedback)
+            
+        try:
+            # If no transcript ID, generate one
+            if not transcript_id:
+                transcript_id = f"TRANSCRIPT-{uuid.uuid4().hex[:8]}"
+            
+            # Generate ticket ID
+            ticket_id = f"{transcript_id}-{datetime.now().strftime('%Y%m%d%H%M')}"
+            
+            # Determine overall priority based on highest priority follow-up
+            priority = "normal"
+            if follow_up_info["priority_counts"]["High"] > 0:
+                priority = "urgent"
+            elif follow_up_info["priority_counts"]["Medium"] > 0:
+                priority = "high"
+                
+            # Prepare the system prompt for email generation
+            system_prompt = """
+            You are an expert assistant that drafts professional follow-up emails based on client conversation analysis.
+            Create a well-structured, professional email that addresses the follow-up actions identified.
+            
+            The email should:
+            1. Have an appropriate subject line based on priority
+            2. Include a professional greeting
+            3. Have a brief introduction explaining the purpose of the email
+            4. List each follow-up action clearly with its priority and justification
+            5. Include a call to action appropriate for the priority level
+            6. End with a professional closing
+            
+            The tone should be professional yet conversational and appropriate to the priority level.
+            
+            Format your response with:
+            Subject: [Your subject line here]
+            
+            [Body of the email]
+            """
+            
+            # If user provided feedback, add it to the prompt
+            if feedback:
+                system_prompt += f"\n\nIncorporate this feedback in your next draft: {feedback}"
+            
+            # Create the user prompt with structured data about follow-ups
+            user_prompt = f"""
+            Please draft a professional email based on the following follow-up information:
+            
+            Ticket ID: {ticket_id}
+            Overall Priority: {priority.upper()}
+            
+            Summary of conversation:
+            {follow_up_info["summary"]}
+            
+            Follow-up actions required ({follow_up_info["total_follow_ups"]} total):
+            """
+            
+            # Add each follow-up item to the prompt
+            for idx, item in enumerate(follow_up_info["follow_ups"], 1):
+                user_prompt += f"""
+                {idx}. Action: {item["action"]}
+                   Priority: {item["priority"]}
+                   Justification: {item["justification"]}
+                   Details: {item["details"]}
+                """
+            
+            # Call OpenAI to generate the email
+            response = self.client.chat.completions.create(
+                model=self.deployment_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7
+            )
+            
+            # Get the generated email content
+            email_content = response.choices[0].message.content
+            
+            # Extract subject line and body (assuming the format includes "Subject:" somewhere)
+            email_parts = email_content.split("Subject:", 1)
+            
+            if len(email_parts) > 1:
+                # There is a subject line in the generated email
+                subject_and_body = email_parts[1].strip()
+                subject_body_split = subject_and_body.split("\n", 1)
+                
+                subject = subject_body_split[0].strip()
+                body = subject_body_split[1].strip() if len(subject_body_split) > 1 else ""
+            else:
+                # No subject found, generate a default one
+                if priority == "urgent":
+                    subject = f"URGENT: Client Follow-up Required - Ticket #{ticket_id}"
+                elif priority == "high":
+                    subject = f"HIGH PRIORITY: Client Follow-up - Ticket #{ticket_id}"
+                else:
+                    subject = f"Client Follow-up - Ticket #{ticket_id}"
+                
+                body = email_content.strip()
+            
+            return {
+                "subject": subject,
+                "body": body,
+                "ticket_id": ticket_id,
+                "priority": priority,
+                "model_used": "azure_openai"
+            }
+                
+        except Exception as e:
+            st.error(f"Error generating email draft: {str(e)}")
+            return {
+                "subject": f"Follow-up Required - Ticket #{transcript_id}",
+                "body": f"Error generating email draft: {str(e)}",
+                "ticket_id": transcript_id,
+                "priority": "normal",
+                "model_used": "error"
+            }
+    
+    def send_email_alert(self, transcript_id, recipient_email, follow_up_info, email_config=None):
+        """Send email alert for follow-up actions based on transcript analysis. """
+
         if not follow_up_info or follow_up_info.get("status") != "success" or not follow_up_info.get("follow_ups"):
             print("No follow-ups to send email about")
             return False
@@ -224,89 +428,40 @@ class TranscriptAnalyzer:
         except Exception as e:
             print(f"Error sending follow-up email alert: {str(e)}")
             return False
-
-
-# Example usage
-def main():
-    # Load credentials from environment variables for security
-    # azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    # api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-    # api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2023-05-15")
-    deployment_name ="intern-gpt4"
     
-    # Email settings
-    email_recipient = os.environ.get("EMAIL_RECIPIENT", "anvithareddy1308@gmail.com")
-    
-    # Check if credentials are available
-    # if not all([azure_endpoint, api_key, deployment_name]):
-    #     print("Error: Azure OpenAI credentials not found in environment variables")
-    #     return
-    
-    # Example transcript
-    sample_transcript = """
-    Client: Hi, I'm interested in upgrading our current software package.
-    Rep: That's great to hear. We have several options available. What specific features are you looking for?
-    Client: Well, we need better reporting capabilities, and our team mentioned they'd like the new inventory management module.
-    Rep: The premium package includes enhanced reporting. As for the inventory module, we can include that as an add-on.
-    Client: That sounds promising. Could you send me a detailed quote by next Friday? I need to present it to the board on the 20th.
-    Rep: Absolutely, I'll prepare that for you. By the way, would you be interested in our training program for the new features?
-    Client: Maybe. Let's focus on the quote first, and we can discuss training options once the purchase is approved.
-    Rep: Perfect. I'll send that quote by Friday. Is there anything else you need in the meantime?
-    Client: Actually, I'm having some issues with our current system crashing when we run month-end reports.
-    Rep: I'm sorry to hear that. Would you like me to have one of our technical specialists look into that for you?
-    Client: Yes, that would be helpful. The sooner the better.
-    Rep: I'll arrange that right away. Thanks for bringing this to our attention.
-    """
-    
-    # Generate a unique ID for this transcript
-    transcript_id = f"TRANSCRIPT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
-    # Create analyzer and process the transcript
-    analyzer = TranscriptAnalyzer(deployment_name)
-    results = analyzer.get_structured_follow_ups(sample_transcript)
-    
-    # Display results
-    if results["status"] == "success":
-        print(f"Transcript Analysis Results - Total Follow-ups: {results['total_follow_ups']}")
-        print(f"Summary: {results['summary']}\n")
-        
-        print("Priority Counts:")
-        for priority, count in results["priority_counts"].items():
-            print(f"  - {priority}: {count}")
-        
-        print("\nFollow-up Actions:")
-        for i, action in enumerate(results["follow_ups"], 1):
-            print(f"\n{i}. {action['action']} (Priority: {action['priority']})")
-            print(f"   Justification: {action['justification']}")
-            print(f"   Details: {action['details']}")
+    def send_custom_email(self, email_data, recipient_email, email_config=None):
+        """Send a custom email with the provided content"""
+        try:
+            # Default email config if none provided
+            if not email_config:
+                email_config = {
+                    "smtp_server": os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
+                    "smtp_port": int(os.environ.get("SMTP_PORT", 587)),
+                    "email_address": st.secrets.get("EMAIL_ADDRESS", ""),
+                    "email_password": st.secrets.get("EMAIL_PASSWORD", "")
+                }
             
-        # Send email if follow-ups are needed
-        if results["total_follow_ups"] > 0:
-            # Email configuration - in production, these should be loaded from environment variables
-            email_config = {
-                "smtp_server": "smtp.gmail.com",
-                "smtp_port": 587,
-                "email_address": os.environ.get("EMAIL_ADDRESS", "anvitha@aiplanet.com"),
-                "email_password": os.environ.get("EMAIL_PASSWORD", "drle ebzs hmbf fspw")
-            }
+            # Set up email
+            msg = MIMEMultipart()
+            msg['From'] = email_config["email_address"]
+            msg['To'] = recipient_email
+            msg['Subject'] = email_data["subject"]
             
-            # Only attempt to send email if credentials are configured
-            if email_config["email_address"] and email_config["email_password"]:
-                email_sent = analyzer.send_email_alert(
-                    transcript_id=transcript_id,
-                    recipient_email=email_recipient,
-                    follow_up_info=results,
-                    email_config=email_config
-                )
-                if email_sent:
-                    print(f"Follow-up email sent to {email_recipient}")
-                else:
-                    print("Failed to send follow-up email")
-            else:
-                print("Email credentials not configured. Set EMAIL_ADDRESS and EMAIL_PASSWORD environment variables.")
-    else:
-        print(f"Error: {results['message']}")
-
-
-if __name__ == "__main__":
-    main()
+            # Convert plain text to HTML for better formatting
+            html_body = email_data["body"].replace('\n', '<br>')
+            msg.attach(MIMEText(html_body, 'html'))
+            
+            # Setup SMTP server
+            server = smtplib.SMTP(email_config["smtp_server"], email_config["smtp_port"])
+            server.starttls()
+            server.login(email_config["email_address"], email_config["email_password"])
+            
+            # Send email
+            server.send_message(msg)
+            server.quit()
+            
+            return True
+                
+        except Exception as e:
+            st.error(f"Error sending custom email: {str(e)}")
+            return False

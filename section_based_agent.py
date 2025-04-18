@@ -11,11 +11,9 @@ from agno.models.google import Gemini
 import streamlit as st
 # Database file location
 db_file = "data/agent_db.sqlite" 
-# os.environ["GROQ_API_KEY"] = st.secrets.get("groq_api_key")
-# os.environ["GOOGLE_API_KEY"] = st.secrets.get("google_api_key")
+os.environ["GROQ_API_KEY"] = st.secrets.get("groq_api_key")
+os.environ["GOOGLE_API_KEY"] = st.secrets.get("google_api_key")
 
-os.environ["GROQ_API_KEY"] = "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"
-os.environ["GOOGLE_API_KEY"] = "AIzaSyDXHAud5tcfXZ0hvGTJg0ZTCkHzVcM8pwk"
 
 class SectionBasedProposalGenerator:
     """Generate proposals by creating one section at a time."""
@@ -34,10 +32,10 @@ class SectionBasedProposalGenerator:
         ]
         self.section_descriptions = {
             "Scope/Objectives": "Start with a clear 'Objective' statement followed by detailed 'Scope of Work' using bullet points. Focus on tangible outcomes and concrete deliverables. List specific functional areas that will be addressed by the solution.",
-            "Proposal/Approach": "Begin with a one-sentence overview of the proposed solution. Then detail the approach using numbered main components (1, 2, 3) with bulleted sub-components (●) and nested sub-sub-components (○) where needed. Each component should have a clear heading followed by a colon. Keep descriptions concise and technical.",
-            "Deliverables from Client": "Create a concise list using bullet points (●) of all information, access, resources, and ongoing client participation needed for project success. Each point should be specific and actionable, starting with a bold key phrase followed by a brief explanation.",
+            "Proposal/Approach": "Structure it as 3-5 numbered components with bold headers and bullet points for implementation details. Include specific technologies, methodologies, and architectures while explaining data flows, integration points, and business impacts. Balance technical specificity with practical implementation details. Address customization options, quality controls, and evolution mechanisms.",
+            "Deliverables from Client": "Create a concise list using bullet points of all information, access, resources, and ongoing client participation needed for project success. Each point should be specific and actionable, starting with a bold key phrase followed by a brief explanation.",
             "Timelines": "Present project timeline as distinct phases with bullet points. For each phase, include: 1) Phase name with duration (e.g., 'Phase 1 - Requirement Gathering: 2 weeks'), 2) Sub-bullet points (○) explaining key activities within that phase. Alternatively, present in a structured table format.",
-            "Quotation": "Start with an introductory sentence. Structure costs using bullet points (●) for main categories and circle bullets (○) for subcategories. Include specific pricing, quantities, and durations. Use nested sub-bullets for detailed breakdowns of costs. Bold key figures and terms.",
+            "Quotation": "Create a comprehensive quotation with a brief introduction. Present costs clearly using bullets, tables, or both. Include specific pricing, quantities, and timeframes. Break down complex costs into detailed subcategories. Bold key figures and important terms for emphasis.",
             "About AI Planet": "Present a concise company overview highlighting expertise in AI/ML technologies, notable clients, and relevant industry experience. Focus on credentials directly relevant to the proposed solution. Keep to 3-5 sentences or a short paragraph without excessive detail."
         }
         self.proposal_sections = {}
@@ -178,8 +176,6 @@ def get_agentic_rag_agent(
             "3. Content Customization:",
             "   - While matching format exactly, customize content to client's specific needs",
             "   - Reference relevant past projects when this would strengthen the proposal",
-            "   - For 'Scope/Objectives' never divide into 'in scope' and 'out of scope'",
-            "   - For 'Proposal/Approach' follow numbered main points with bulleted details",
             "4. Knowledge Search:",
             "   - Use search_knowledge_base for additional relevant examples as needed",
             "   - If examples are insufficient, use external search for industry specifics"
