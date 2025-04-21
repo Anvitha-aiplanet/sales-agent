@@ -4,6 +4,7 @@ agno
 lancedb
 google-generativeai
 google-genai
+aiofiles
 #market-research
 langchain-core
 langchain-openai
