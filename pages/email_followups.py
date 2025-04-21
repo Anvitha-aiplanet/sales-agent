@@ -6,7 +6,7 @@ from datetime import datetime
 from io import StringIO
 import uuid
 
-from follow_up_test import TranscriptAnalyzer
+from transcript_analyzer import TranscriptAnalyzer
 
 # Set page configuration
 st.set_page_config(
@@ -24,6 +24,7 @@ if 'deployment_name' not in st.session_state:
 # Email configuration (hidden from user)
 EMAIL_ADDRESS = st.secrets.get("EMAIL_ADDRESS")
 EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD")
+
 
 DEFAULT_RECIPIENT = os.environ.get("DEFAULT_RECIPIENT", "anvithareddy1308@gmail.com")
 
