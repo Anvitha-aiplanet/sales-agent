@@ -15,6 +15,7 @@ os.environ["GROQ_API_KEY"] = st.secrets.get("groq_api_key")
 os.environ["GOOGLE_API_KEY"] = st.secrets.get("google_api_key")
 
 
+
 class SectionBasedProposalGenerator:
     """Generate proposals by creating one section at a time."""
     
@@ -23,6 +24,7 @@ class SectionBasedProposalGenerator:
 
         self.agent = agent
         self.sections = [
+            "Introduction",
             "Scope/Objectives",
             "Proposal/Approach",
             "Deliverables from Client",
@@ -31,6 +33,7 @@ class SectionBasedProposalGenerator:
             "About AI Planet"
         ]
         self.section_descriptions = {
+            "Introduction": "Create a compelling introduction that summarizes the client's needs and our proposed solution. Include a brief overview of the project scope, key benefits, and expected outcomes. Keep it concise and focused on value proposition.",
             "Scope/Objectives": "Start with a clear 'Objective' statement followed by detailed 'Scope of Work' using bullet points. Focus on tangible outcomes and concrete deliverables. List specific functional areas that will be addressed by the solution.",
             "Proposal/Approach": "Structure it as 3-5 numbered components with bold headers and bullet points for implementation details. Include specific technologies, methodologies, and architectures while explaining data flows, integration points, and business impacts. Balance technical specificity with practical implementation details. Address customization options, quality controls, and evolution mechanisms.",
             "Deliverables from Client": "Create a concise list using bullet points of all information, access, resources, and ongoing client participation needed for project success. Each point should be specific and actionable, starting with a bold key phrase followed by a brief explanation.",
@@ -179,6 +182,10 @@ def get_agentic_rag_agent(
             "4. Knowledge Search:",
             "   - Use search_knowledge_base for additional relevant examples as needed",
             "   - If examples are insufficient, use external search for industry specifics"
+            "5. CRITICAL - Output Format:",
+            "   - Start DIRECTLY with the section content with NO preamble or meta-commentary",
+            "   - NO statements like 'I will generate' or explanations of your approach",
+            "   - Output ONLY content that would appear in the final proposal document"
         ],
         search_knowledge=True,
         markdown=True,
@@ -189,27 +196,27 @@ def get_agentic_rag_agent(
     return agent
 
 
-# Example usage
-if __name__ == "__main__":
-    # Initialize the agent
-    agent = get_agentic_rag_agent()
+# # Example usage
+# if __name__ == "__main__":
+#     # Initialize the agent
+#     agent = get_agentic_rag_agent()
     
-    # Initialize the proposal generator
-    proposal_gen = SectionBasedProposalGenerator(agent)
+#     # Initialize the proposal generator
+#     proposal_gen = SectionBasedProposalGenerator(agent)
     
-    # Example requirements text
-    requirements_text = """
-    We need an AI solution for customer support automation that can handle email classification, 
-    sentiment analysis, and automated responses for simple queries. 
-    We want to integrate this with our existing Zendesk system.
-    Our team consists of 5 customer support representatives who handle around 500 emails per day.
-    We want to reduce manual handling by at least 40%.
-    Our budget is approximately $50,000 for this project.
-    We need this implemented within 3 months.
-    """
+#     # Example requirements text
+#     requirements_text = """
+#     We need an AI solution for customer support automation that can handle email classification, 
+#     sentiment analysis, and automated responses for simple queries. 
+#     We want to integrate this with our existing Zendesk system.
+#     Our team consists of 5 customer support representatives who handle around 500 emails per day.
+#     We want to reduce manual handling by at least 40%.
+#     Our budget is approximately $50,000 for this project.
+#     We need this implemented within 3 months.
+#     """
     
-    # Generate all sections interactively
-    proposal_sections = proposal_gen.generate_all_sections(requirements_text)
+#     # Generate all sections interactively
+#     proposal_sections = proposal_gen.generate_all_sections(requirements_text)
     
-    # You could now pass these approved sections to a PDF generator
-    print("\nAll sections approved! Ready to generate PDF.")
+#     # You could now pass these approved sections to a PDF generator
+#     print("\nAll sections approved! Ready to generate PDF.")
