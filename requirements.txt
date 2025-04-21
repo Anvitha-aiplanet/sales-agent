@@ -3,7 +3,7 @@ reportlab
 agno
 lancedb
 google-generativeai
-
+google-genai
 #market-research
 langchain-core
 langchain-openai
