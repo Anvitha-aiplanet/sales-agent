@@ -5,6 +5,7 @@ lancedb
 google-generativeai
 google-genai
 aiofiles
+pypdf
 #market-research
 langchain-core
 langchain-openai
