@@ -1,6 +1,6 @@
 #proposal-generator
 reportlab
-agno-ai
+agno
 lancedb
 google-generativeai
 
