@@ -77,6 +77,10 @@ if "research_in_progress" not in st.session_state:
 if "last_user_input" not in st.session_state:
     st.session_state.last_user_input = ""
 
+# New state variable to track processed messages
+if "processed_events" not in st.session_state:
+    st.session_state.processed_events = set()
+
 # Create a container for the chat history
 chat_container = st.container()
 
@@ -108,45 +112,67 @@ with st.form(key="chat_form", clear_on_submit=True):
     )
     submit_button = cols[1].form_submit_button("Research")
 
+# Helper function to process graph events
+def process_graph_events(events, is_new_query=False):
+    research_complete = False
+    progress_made = False
+    
+    for event in events:
+        # Generate a unique identifier for this event
+        event_id = None
+        if "messages" in event and event["messages"]:
+            latest_message = event["messages"][-1]
+            if isinstance(latest_message, AIMessage):
+                event_id = hash(latest_message.content)
+        
+        # Skip already processed events
+        if event_id and event_id in st.session_state.processed_events:
+            continue
+            
+        # Update company name if available
+        if "company_name" in event and event["company_name"]:
+            st.session_state.company_name = event["company_name"]
+        
+        # Update research status if available
+        if "status" in event and event["status"]:
+            st.session_state.research_status = event["status"]
+            
+            # Check if all tasks are completed
+            if all(v == "completed" for v in event["status"].values()):
+                research_complete = True
+        
+        # Add AI messages to chat history
+        if "messages" in event and event["messages"]:
+            latest_message = event["messages"][-1]
+            if isinstance(latest_message, AIMessage):
+                # Add AI response to chat history (avoid duplicates)
+                if event_id:
+                    st.session_state.processed_events.add(event_id)
+                    st.session_state.messages.append({"role": "assistant", "content": latest_message.content})
+                    progress_made = True
+    
+    return research_complete, progress_made
+
 # Handle research continuation when in progress
 if st.session_state.research_in_progress:
     with st.spinner("Continuing research..."):
-        # Continue processing the graph
         try:
-            # Check if any new messages have been processed from the last run
-            current_message_count = len(st.session_state.messages)
-            
-            # Process events from the stream
+            # Process events from the graph stream
             events = st.session_state.graph.stream(
                 {},  # No new input, continue from where we left off
                 {"configurable": {"thread_id": "1"}},
                 stream_mode="values"
             )
             
-            # Process events
-            for event in events:
-                # Update company name if available
-                if "company_name" in event and event["company_name"]:
-                    st.session_state.company_name = event["company_name"]
-                
-                # Update research status if available
-                if "status" in event and event["status"]:
-                    st.session_state.research_status = event["status"]
-                
-                # Add AI messages to chat history
-                if "messages" in event and event["messages"]:
-                    latest_message = event["messages"][-1]
-                    if isinstance(latest_message, AIMessage):
-                        # Add AI response to chat history
-                        st.session_state.messages.append({"role": "assistant", "content": latest_message.content})
+            # Process events and check for completion
+            research_complete, progress_made = process_graph_events(events)
             
-            # Check if all tasks are completed
-            if (st.session_state.research_status and 
-                all(v == "completed" for v in st.session_state.research_status.values())):
+            # Update research status flag
+            if research_complete:
                 st.session_state.research_in_progress = False
-            
-            # Check if we've made progress (added new messages)
-            if len(st.session_state.messages) > current_message_count:
+                
+            # Only trigger rerun if we made progress
+            if progress_made:
                 st.rerun()
                 
         except Exception as e:
@@ -155,6 +181,9 @@ if st.session_state.research_in_progress:
 
 # Handle form submission for new research
 if submit_button and user_input.strip():
+    # Reset processed events for new query
+    st.session_state.processed_events = set()
+    
     # Store the user input
     st.session_state.last_user_input = user_input
     
@@ -170,7 +199,6 @@ if submit_button and user_input.strip():
     
     # Process with the market research graph
     with st.spinner("Starting research... This may take a few moments"):
-        # Stream the graph updates
         try:
             events = st.session_state.graph.stream(
                 {"messages": [HumanMessage(content=user_input)]},
@@ -178,24 +206,14 @@ if submit_button and user_input.strip():
                 stream_mode="values"
             )
             
-            # Process events
-            for event in events:
-                # Update company name if available
-                if "company_name" in event and event["company_name"]:
-                    st.session_state.company_name = event["company_name"]
-                
-                # Update research status if available
-                if "status" in event and event["status"]:
-                    st.session_state.research_status = event["status"]
-                
-                # Add AI messages to chat history
-                if "messages" in event and event["messages"]:
-                    latest_message = event["messages"][-1]
-                    if isinstance(latest_message, AIMessage):
-                        # Add AI response to chat history
-                        st.session_state.messages.append({"role": "assistant", "content": latest_message.content})
+            # Process events and check for completion
+            research_complete, _ = process_graph_events(events, is_new_query=True)
             
-            # Check if we should force a rerun
+            # Update research status flag
+            if research_complete:
+                st.session_state.research_in_progress = False
+                
+            # Always rerun after starting new research
             st.rerun()
             
         except Exception as e:
@@ -254,12 +272,3 @@ with st.sidebar:
     
     The orchestrator coordinates these agents to provide comprehensive research.
     """)
-
-# Automatically scroll to the bottom of the chat
-if st.session_state.messages:
-    st.markdown("""
-    <script>
-        var element = document.getElementsByClassName('stApp')[0];
-        element.scrollTop = element.scrollHeight;
-    </script>
-    """, unsafe_allow_html=True)

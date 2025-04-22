@@ -21,7 +21,6 @@ class State(TypedDict):
     status: Optional[Dict]
 
 serper_tool = GoogleSerperAPIWrapper(serper_api_key=st.secrets["serper_api_key"])
-
 # TOOL DEFINITIONS
 @tool
 def search_tool(query: str) -> str:
@@ -30,6 +29,7 @@ def search_tool(query: str) -> str:
         # Use serper API key from Streamlit secrets
         serper = serper_tool
         results = serper.run(query)
+        print("seatch tool results",results)
         return results
     except Exception as e:
         return f"Error during search: {str(e)}"
@@ -425,7 +425,6 @@ def consolidate_reports(company_name, revenue_history, revenue_sources, competit
     
     return report
 
-# BUILD LANGGRAPH
 def build_market_research_graph():
     # Initialize the StateGraph
     graph_builder = StateGraph(State)
@@ -448,9 +447,9 @@ def build_market_research_graph():
         if not state.get("company_name") or not state.get("status"):
             return "orchestrator"
         
-        # Check if all tasks are completed
+        # Check if all tasks are completed - return END instead of "orchestrator"
         if all(v == "completed" for v in state["status"].values()):
-            return "orchestrator"
+            return END
         
         # Check which tasks need to be executed
         if state["status"]["revenue_history"] == "pending":
@@ -474,37 +473,14 @@ def build_market_research_graph():
             "orchestrator": "orchestrator",
             "revenue_history_agent": "revenue_history_agent",
             "revenue_sources_agent": "revenue_sources_agent",
-            "competitor_genai_agent": "competitor_genai_agent"
+            "competitor_genai_agent": "competitor_genai_agent",
+            END: END  # Make sure to include END in the mapping
         }
     )
     graph_builder.add_edge("revenue_history_agent", "orchestrator")
     graph_builder.add_edge("revenue_sources_agent", "orchestrator")
     graph_builder.add_edge("competitor_genai_agent", "orchestrator")
     
-    # Compile the graph
+    # Compile the graph (no recursion_limit parameter)
     memory = MemorySaver()
     return graph_builder.compile(checkpointer=memory)
-
-# Function to stream graph updates - used by frontend
-def stream_graph_updates(user_input):
-    # Initialize graph if not already initialized
-    if "graph" not in st.session_state:
-        st.session_state.graph = build_market_research_graph()
-    
-    # Stream the graph updates
-    events = st.session_state.graph.stream(
-        {"messages": [HumanMessage(content=user_input)]},
-        {"configurable": {"thread_id": "1"}},
-        stream_mode="values"
-    )
-    
-    # Process events
-    final_content = None
-    for event in events:
-        # Add AI messages to chat history
-        if "messages" in event and event["messages"]:
-            latest_message = event["messages"][-1]
-            if isinstance(latest_message, AIMessage):
-                final_content = latest_message.content
-    
-    return final_content or "I couldn't retrieve any information. Please try again."
