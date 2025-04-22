@@ -11,9 +11,8 @@ from agno.models.google import Gemini
 import streamlit as st
 # Database file location
 db_file = "data/agent_db.sqlite" 
-os.environ["GROQ_API_KEY"] = st.secrets.get("groq_api_key")
+# os.environ["GROQ_API_KEY"] = st.secrets.get("groq_api_key")
 os.environ["GOOGLE_API_KEY"] = st.secrets.get("google_api_key")
-
 
 
 class SectionBasedProposalGenerator:
@@ -33,7 +32,7 @@ class SectionBasedProposalGenerator:
             "About AI Planet"
         ]
         self.section_descriptions = {
-            "Introduction": "Create a compelling introduction that summarizes the client's needs and our proposed solution. Include a brief overview of the project scope, key benefits, and expected outcomes. Keep it concise and focused on value proposition.",
+            "Introduction": "Create a powerful 2-3 sentence introduction that: 1) Clearly states the client's current challenge/pain point, 2) Immediately follows with AI Planet's proposed solution, and 3) Emphasizes the core business value. Use direct, professional language without technical jargon. Format: First sentence for client's need, second for our solution, optional third for key impact. Example style: 'Client X needs Y. AI Planet proposes Z solution to address this challenge.'",
             "Scope/Objectives": "Start with a clear 'Objective' statement followed by detailed 'Scope of Work' using bullet points. Focus on tangible outcomes and concrete deliverables. List specific functional areas that will be addressed by the solution.",
             "Proposal/Approach": "Structure it as 3-5 numbered components with bold headers and bullet points for implementation details. Include specific technologies, methodologies, and architectures while explaining data flows, integration points, and business impacts. Balance technical specificity with practical implementation details. Address customization options, quality controls, and evolution mechanisms.",
             "Deliverables from Client": "Create a concise list using bullet points of all information, access, resources, and ongoing client participation needed for project success. Each point should be specific and actionable, starting with a bold key phrase followed by a brief explanation.",
@@ -60,9 +59,11 @@ Please provide:
 [Identify and explain in paragraph form the essential elements that must be covered to meet these client requirements]"""
         
         from agno.agent import Agent, RunResponse  # noqa
-        from agno.models.groq import Groq
-
-        req_agent = Agent(model=Groq(id="llama-3.3-70b-versatile"), markdown=True)
+       
+        req_agent = Agent(model=Gemini(
+            id="gemini-2.0-flash-exp",
+            api_key=os.environ["GOOGLE_API_KEY"]
+        ), markdown=True)
 
         req_response=req_agent.run(prompt)
         req_input=req_response.content

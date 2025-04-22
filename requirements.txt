@@ -6,7 +6,6 @@ google-generativeai
 google-genai
 aiofiles
 pypdf
-groq
 
 #market-research
 langchain-core
